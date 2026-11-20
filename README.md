@@ -23,6 +23,28 @@ Application Flutter de présentation d’un CV, d’une famille et de coordonné
 - Material 3
 - Packages : `cupertino_icons`, `url_launcher`
 
+## Captures d’écran
+
+### Connexion
+
+![Écran de connexion](screenshots/login_page.jpeg)
+
+### Accueil
+
+![Écran d’accueil](screenshots/home_page.jpeg)
+
+### CV
+
+![Page du CV](screenshots/cv_page.jpeg)
+
+### Famille
+
+![Page de la famille](screenshots/familly_page.jpeg)
+
+### Contact
+
+![Page de contact](screenshots/contact_page.jpeg)
+
 ## Installation et lancement
 
 ```bash
@@ -67,15 +89,6 @@ lib/
 assets/images/     # Photos locales à ajouter
 screenshots/       # Captures de l’application exécutée
 ```
-
-## Captures d’écran
-
-Les captures doivent provenir de l’application exécutée sur un appareil ou un émulateur. Aucun émulateur Android n’est installé dans l’environnement et le rendu Flutter dans Chrome headless est resté blanc. Les quatre captures réelles ne sont donc pas disponibles. Après lancement sur un appareil, enregistrez ces fichiers ici :
-
-- Connexion : `screenshots/01-login.png`
-- Accueil / CV : `screenshots/02-accueil.png`
-- Famille : `screenshots/03-famille.png`
-- Contact : `screenshots/04-contact.png`
 
 ## GitHub
 
