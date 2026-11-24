@@ -12,6 +12,30 @@ Les pages Accueil, Mon CV et Contact gardent le contenu, le thème vert, les tra
 - Parcours CV, accueil, contact et déconnexion conservés.
 - États de chargement, erreurs API et confirmation avant suppression.
 
+## Captures d’écran
+
+Les captures du TP1 sont conservées dans `screenshots/` :
+
+### Connexion
+
+![Page de connexion](screenshots/login_page.jpeg)
+
+### Accueil
+
+![Page d’accueil](screenshots/home_page.jpeg)
+
+### Mon CV
+
+![Page Mon CV](screenshots/cv_page.jpeg)
+
+### Famille
+
+![Page Famille](screenshots/familly_page.jpeg)
+
+### Contact
+
+![Page Contact](screenshots/contact_page.jpeg)
+
 ## Technologies et architecture
 
 - Flutter / Dart, Material 3.
