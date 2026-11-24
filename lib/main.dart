@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'models/family_member.dart';
+import 'services/api_service.dart';
 import 'data/contact.dart';
 import 'data/education.dart';
 import 'data/experience.dart';
-import 'data/family.dart';
 import 'data/personal_info.dart';
 import 'data/skills.dart';
 import 'theme/app_theme.dart';
@@ -30,10 +32,12 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  final _api = ApiService();
   final _formKey = GlobalKey<FormState>();
   final _user = TextEditingController();
   final _password = TextEditingController();
   bool _hidden = true;
+  bool _loading = false;
   String? _error;
 
   @override
@@ -43,14 +47,44 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _login() {
+  Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_user.text.trim() == demoUsername && _password.text == demoPassword) {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      await _api.login(_user.text.trim(), _password.text);
+      if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(builder: (_) => const MainShell()),
       );
-    } else {
-      setState(() => _error = 'Identifiant ou mot de passe incorrect.');
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error = 'API inaccessible. Vérifiez son démarrage et son URL.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _register() async {
+    final email = await Navigator.of(context).push<String>(
+      MaterialPageRoute<String>(
+        builder: (_) => RegisterScreen(initialEmail: _user.text.trim()),
+      ),
+    );
+    if (email != null && mounted) {
+      _user.text = email;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Compte créé. Vous pouvez vous connecter.'),
+        ),
+      );
     }
   }
 
@@ -67,12 +101,16 @@ class _LoginScreenState extends State<LoginScreen> {
       child: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            padding: EdgeInsets.all(
+              MediaQuery.sizeOf(context).width < 360 ? 16 : 24,
+            ),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 440),
               child: Card(
                 child: Padding(
-                  padding: const EdgeInsets.all(28),
+                  padding: EdgeInsets.all(
+                    MediaQuery.sizeOf(context).width < 360 ? 20 : 28,
+                  ),
                   child: Form(
                     key: _formKey,
                     child: Column(
@@ -104,11 +142,12 @@ class _LoginScreenState extends State<LoginScreen> {
                           controller: _user,
                           textInputAction: TextInputAction.next,
                           decoration: const InputDecoration(
-                            labelText: 'Identifiant',
+                            labelText: 'E-mail',
                             prefixIcon: Icon(Icons.person_outline),
+                            hintText: 'nom@exemple.com',
                           ),
                           validator: (v) => v == null || v.trim().isEmpty
-                              ? 'Saisissez votre identifiant.'
+                              ? 'Saisissez votre adresse e-mail.'
                               : null,
                         ),
                         const SizedBox(height: 14),
@@ -146,15 +185,260 @@ class _LoginScreenState extends State<LoginScreen> {
                         ],
                         const SizedBox(height: 20),
                         FilledButton.icon(
-                          onPressed: _login,
-                          icon: const Icon(Icons.arrow_forward),
+                          onPressed: _loading ? null : _login,
+                          icon: _loading
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.arrow_forward),
                           label: const Text('Se connecter'),
                         ),
                         const SizedBox(height: 16),
+                        TextButton(
+                          onPressed: _loading ? null : _register,
+                          child: const Text('Créer un compte'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class RegisterScreen extends StatefulWidget {
+  const RegisterScreen({super.key, this.initialEmail = ''});
+
+  final String initialEmail;
+
+  @override
+  State<RegisterScreen> createState() => _RegisterScreenState();
+}
+
+class _RegisterScreenState extends State<RegisterScreen> {
+  final _api = ApiService();
+  final _formKey = GlobalKey<FormState>();
+  late final _email = TextEditingController(text: widget.initialEmail);
+  final _password = TextEditingController();
+  final _confirmation = TextEditingController();
+  bool _hidePassword = true;
+  bool _hideConfirmation = true;
+  bool _loading = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _email.dispose();
+    _password.dispose();
+    _confirmation.dispose();
+    super.dispose();
+  }
+
+  Future<void> _createAccount() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      await _api.register(_email.text.trim(), _password.text);
+      if (mounted) Navigator.of(context).pop(_email.text.trim());
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error = 'API inaccessible. Vérifiez son démarrage et son URL.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xfff4f7f6), Color(0xffe7f0ed)],
+        ),
+      ),
+      child: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.all(
+              MediaQuery.sizeOf(context).width < 360 ? 16 : 24,
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Card(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    MediaQuery.sizeOf(context).width < 360 ? 20 : 30,
+                    22,
+                    MediaQuery.sizeOf(context).width < 360 ? 20 : 30,
+                    26,
+                  ),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            onPressed: _loading
+                                ? null
+                                : () => Navigator.of(context).pop(),
+                            icon: const Icon(Icons.arrow_back),
+                            label: const Text('Retour'),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const CircleAvatar(
+                          radius: 34,
+                          backgroundColor: AppTheme.ink,
+                          child: Icon(
+                            Icons.person_add_alt_1,
+                            size: 32,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 18),
                         Text(
-                          'Accès de démonstration : $demoUsername / $demoPassword',
+                          'Créer votre compte',
                           textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.bodySmall,
+                          style: Theme.of(context).textTheme.headlineMedium,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Inscrivez-vous pour accéder à votre espace personnel.',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                        const SizedBox(height: 28),
+                        TextFormField(
+                          controller: _email,
+                          keyboardType: TextInputType.emailAddress,
+                          textInputAction: TextInputAction.next,
+                          autofillHints: const [AutofillHints.email],
+                          decoration: const InputDecoration(
+                            labelText: 'Adresse e-mail',
+                            hintText: 'nom@exemple.com',
+                            prefixIcon: Icon(Icons.email_outlined),
+                          ),
+                          validator: (value) {
+                            final email = value?.trim() ?? '';
+                            return email.contains('@') && email.contains('.')
+                                ? null
+                                : 'Saisissez une adresse e-mail valide.';
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _password,
+                          obscureText: _hidePassword,
+                          textInputAction: TextInputAction.next,
+                          autofillHints: const [AutofillHints.newPassword],
+                          decoration: InputDecoration(
+                            labelText: 'Mot de passe',
+                            helperText: '6 caractères minimum',
+                            prefixIcon: const Icon(Icons.lock_outline),
+                            suffixIcon: IconButton(
+                              tooltip: _hidePassword
+                                  ? 'Afficher le mot de passe'
+                                  : 'Masquer le mot de passe',
+                              onPressed: () => setState(
+                                () => _hidePassword = !_hidePassword,
+                              ),
+                              icon: Icon(
+                                _hidePassword
+                                    ? Icons.visibility_outlined
+                                    : Icons.visibility_off_outlined,
+                              ),
+                            ),
+                          ),
+                          validator: (value) =>
+                              value != null && value.length >= 6
+                              ? null
+                              : 'Choisissez au moins 6 caractères.',
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _confirmation,
+                          obscureText: _hideConfirmation,
+                          textInputAction: TextInputAction.done,
+                          onFieldSubmitted: (_) => _createAccount(),
+                          decoration: InputDecoration(
+                            labelText: 'Confirmer le mot de passe',
+                            prefixIcon: const Icon(Icons.lock_reset_outlined),
+                            suffixIcon: IconButton(
+                              tooltip: _hideConfirmation
+                                  ? 'Afficher le mot de passe'
+                                  : 'Masquer le mot de passe',
+                              onPressed: () => setState(
+                                () => _hideConfirmation = !_hideConfirmation,
+                              ),
+                              icon: Icon(
+                                _hideConfirmation
+                                    ? Icons.visibility_outlined
+                                    : Icons.visibility_off_outlined,
+                              ),
+                            ),
+                          ),
+                          validator: (value) => value == _password.text
+                              ? null
+                              : 'Les mots de passe ne correspondent pas.',
+                        ),
+                        if (_error != null) ...[
+                          const SizedBox(height: 16),
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xffffeeee),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              _error!,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: Color(0xffa32929)),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 24),
+                        FilledButton.icon(
+                          onPressed: _loading ? null : _createAccount,
+                          icon: _loading
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.check_circle_outline),
+                          label: const Text('Créer mon compte'),
+                        ),
+                        const SizedBox(height: 10),
+                        TextButton(
+                          onPressed: _loading
+                              ? null
+                              : () => Navigator.of(context).pop(),
+                          child: const Text(
+                            'J’ai déjà un compte · Se connecter',
+                          ),
                         ),
                       ],
                     ),
@@ -185,52 +469,142 @@ class _MainShellState extends State<MainShell> {
   ];
   final _titles = const ['Accueil', 'Mon CV', 'Ma famille', 'Contact'];
 
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: Text(_titles[_index]),
-      actions: [
-        IconButton(
-          tooltip: 'Se déconnecter',
-          onPressed: () => Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute<void>(builder: (_) => const LoginScreen()),
-            (_) => false,
+  static const _destinations = [
+    NavigationDestination(
+      icon: Icon(Icons.home_outlined),
+      selectedIcon: Icon(Icons.home_rounded),
+      label: 'Accueil',
+    ),
+    NavigationDestination(
+      icon: Icon(Icons.badge_outlined),
+      selectedIcon: Icon(Icons.badge_rounded),
+      label: 'Mon CV',
+    ),
+    NavigationDestination(
+      icon: Icon(Icons.family_restroom_outlined),
+      selectedIcon: Icon(Icons.family_restroom_rounded),
+      label: 'Famille',
+    ),
+    NavigationDestination(
+      icon: Icon(Icons.mail_outline_rounded),
+      selectedIcon: Icon(Icons.mail_rounded),
+      label: 'Contact',
+    ),
+  ];
+
+  static const _railDestinations = [
+    NavigationRailDestination(
+      icon: Icon(Icons.home_outlined),
+      selectedIcon: Icon(Icons.home_rounded),
+      label: Text('Accueil'),
+    ),
+    NavigationRailDestination(
+      icon: Icon(Icons.badge_outlined),
+      selectedIcon: Icon(Icons.badge_rounded),
+      label: Text('Mon CV'),
+    ),
+    NavigationRailDestination(
+      icon: Icon(Icons.family_restroom_outlined),
+      selectedIcon: Icon(Icons.family_restroom_rounded),
+      label: Text('Famille'),
+    ),
+    NavigationRailDestination(
+      icon: Icon(Icons.mail_outline_rounded),
+      selectedIcon: Icon(Icons.mail_rounded),
+      label: Text('Contact'),
+    ),
+  ];
+
+  Widget _activePage() => AnimatedSwitcher(
+    duration: const Duration(milliseconds: 220),
+    child: KeyedSubtree(key: ValueKey(_index), child: _pages[_index]),
+  );
+
+  Widget _mobileNavigation() => SafeArea(
+    top: false,
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: AppTheme.ink.withValues(alpha: .12),
+              blurRadius: 22,
+              offset: const Offset(0, 7),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: NavigationBar(
+            height: 74,
+            elevation: 0,
+            backgroundColor: Colors.white,
+            indicatorColor: const Color(0xffdcebe5),
+            indicatorShape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+            selectedIndex: _index,
+            onDestinationSelected: (i) => setState(() => _index = i),
+            destinations: _destinations,
           ),
-          icon: const Icon(Icons.logout),
         ),
-      ],
-    ),
-    body: AnimatedSwitcher(
-      duration: const Duration(milliseconds: 220),
-      child: KeyedSubtree(key: ValueKey(_index), child: _pages[_index]),
-    ),
-    bottomNavigationBar: NavigationBar(
-      selectedIndex: _index,
-      onDestinationSelected: (i) => setState(() => _index = i),
-      destinations: const [
-        NavigationDestination(
-          icon: Icon(Icons.home_outlined),
-          selectedIcon: Icon(Icons.home),
-          label: 'Accueil',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.badge_outlined),
-          selectedIcon: Icon(Icons.badge),
-          label: 'Mon CV',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.family_restroom_outlined),
-          selectedIcon: Icon(Icons.family_restroom),
-          label: 'Famille',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.mail_outline),
-          selectedIcon: Icon(Icons.mail),
-          label: 'Contact',
-        ),
-      ],
+      ),
     ),
   );
+
+  @override
+  Widget build(BuildContext context) {
+    final wideLayout = MediaQuery.sizeOf(context).width >= 1024;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_titles[_index]),
+        toolbarHeight: 68,
+        actions: [
+          IconButton(
+            tooltip: 'Se déconnecter',
+            onPressed: () => Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute<void>(builder: (_) => const LoginScreen()),
+              (_) => false,
+            ),
+            icon: const Icon(Icons.logout),
+          ),
+        ],
+      ),
+      body: wideLayout
+          ? Row(
+              children: [
+                SizedBox(
+                  width: 84,
+                  child: NavigationRail(
+                    minWidth: 72,
+                    backgroundColor: Colors.white,
+                    selectedIndex: _index,
+                    labelType: NavigationRailLabelType.all,
+                    indicatorColor: const Color(0xffdcebe5),
+                    leading: const Padding(
+                      padding: EdgeInsets.only(top: 16, bottom: 20),
+                      child: CircleAvatar(
+                        backgroundColor: AppTheme.ink,
+                        foregroundColor: Colors.white,
+                        child: Icon(Icons.person_outline),
+                      ),
+                    ),
+                    onDestinationSelected: (i) => setState(() => _index = i),
+                    destinations: _railDestinations,
+                  ),
+                ),
+                const VerticalDivider(width: 1),
+                Expanded(child: _activePage()),
+              ],
+            )
+          : _activePage(),
+      bottomNavigationBar: wideLayout ? null : _mobileNavigation(),
+    );
+  }
 }
 
 class HomeScreen extends StatelessWidget {
@@ -354,90 +728,453 @@ class CvScreen extends StatelessWidget {
   );
 }
 
-class FamilyScreen extends StatelessWidget {
+class FamilyScreen extends StatefulWidget {
   const FamilyScreen({super.key});
+  @override
+  State<FamilyScreen> createState() => _FamilyScreenState();
+}
+
+class _FamilyScreenState extends State<FamilyScreen> {
+  final _api = ApiService();
+  List<FamilyMember> _familyMembers = [];
+  bool _isLoading = true;
+  String? _loadError;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMembers();
+  }
+
+  Future<void> _loadMembers() async {
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _loadError = null;
+      });
+    }
+    try {
+      final members = await _api.getFamilyMembers();
+      if (mounted) {
+        setState(() {
+          _familyMembers = members;
+          _isLoading = false;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _loadError = error is ApiException
+              ? error.message
+              : 'API inaccessible. Vérifiez son démarrage et son URL.';
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  void _reload() {
+    _loadMembers();
+  }
+
+  String _imageUrl(String value) {
+    final image = Uri.tryParse(value);
+    final api = Uri.tryParse(ApiService.baseUrl);
+    if (image == null ||
+        api == null ||
+        (image.host != 'localhost' && image.host != '127.0.0.1')) {
+      return value;
+    }
+    return image.replace(host: api.host, port: api.port).toString();
+  }
+
+  Widget _memberAvatar(FamilyMember member) {
+    final fallback = CircleAvatar(
+      radius: 34,
+      backgroundColor: const Color(0xffe7f0ed),
+      child: Text(
+        member.initials,
+        style: const TextStyle(
+          fontSize: 20,
+          fontWeight: FontWeight.bold,
+          color: AppTheme.ink,
+        ),
+      ),
+    );
+    final url = member.imageUrl;
+    if (url == null || url.isEmpty) return fallback;
+
+    return ClipOval(
+      child: SizedBox(
+        width: 68,
+        height: 68,
+        child: Image.network(
+          _imageUrl(url),
+          fit: BoxFit.cover,
+          webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
+          errorBuilder: (context, error, stackTrace) => fallback,
+          loadingBuilder: (context, child, progress) {
+            if (progress == null) return child;
+            return fallback;
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _edit([FamilyMember? existing]) async {
+    final formKey = GlobalKey<FormState>();
+    PlatformFile? selectedImage;
+    final fields = <String, TextEditingController>{
+      'nom': TextEditingController(text: existing?.nom ?? ''),
+      'postnom': TextEditingController(text: existing?.postnom ?? ''),
+      'prenom': TextEditingController(text: existing?.prenom ?? ''),
+      'lieu_naissance': TextEditingController(
+        text: existing?.lieuNaissance ?? '',
+      ),
+      'date_naissance': TextEditingController(
+        text: existing?.dateNaissance ?? '',
+      ),
+      'parente': TextEditingController(text: existing?.parente ?? ''),
+    };
+    final labels = {
+      'nom': 'Nom',
+      'postnom': 'Postnom',
+      'prenom': 'Prénom',
+      'lieu_naissance': 'Lieu de naissance',
+      'date_naissance': 'Date de naissance (AAAA-MM-JJ)',
+      'parente': 'Parenté',
+    };
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: Text(
+            existing == null ? 'Ajouter un membre' : 'Modifier le membre',
+          ),
+          content: SizedBox(
+            width: 420,
+            child: Form(
+              key: formKey,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final entry in fields.entries)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: TextFormField(
+                          controller: entry.value,
+                          keyboardType: entry.key == 'date_naissance'
+                              ? TextInputType.datetime
+                              : TextInputType.text,
+                          decoration: InputDecoration(
+                            labelText: labels[entry.key],
+                          ),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Ce champ est obligatoire.';
+                            }
+                            if (entry.key == 'date_naissance' &&
+                                !RegExp(
+                                  r'^\d{4}-\d{2}-\d{2}$',
+                                ).hasMatch(value)) {
+                              return 'Utilisez le format AAAA-MM-JJ.';
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        try {
+                          final file = await FilePicker.pickFile(
+                            type: FileType.custom,
+                            allowedExtensions: [
+                              'jpg',
+                              'jpeg',
+                              'png',
+                              'gif',
+                              'webp',
+                            ],
+                          );
+                          if (file != null) {
+                            final size = await file.length();
+                            if (size != null && size > 2 * 1024 * 1024) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'L’image ne doit pas dépasser 2 Mo.',
+                                    ),
+                                  ),
+                                );
+                              }
+                              return;
+                            }
+                            setDialogState(() => selectedImage = file);
+                          }
+                        } catch (_) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Impossible de lire cette image.',
+                                ),
+                              ),
+                            );
+                          }
+                        }
+                      },
+                      icon: const Icon(Icons.photo_outlined),
+                      label: Text(
+                        selectedImage == null
+                            ? existing?.imageUrl == null
+                                  ? 'Ajouter une image (facultatif)'
+                                  : 'Remplacer l’image'
+                            : 'Changer l’image',
+                      ),
+                    ),
+                    if (selectedImage != null)
+                      Text(selectedImage!.name, textAlign: TextAlign.center),
+                    const Text('JPG, PNG, GIF ou WebP • 2 Mo maximum'),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (formKey.currentState!.validate()) {
+                  Navigator.pop(dialogContext, true);
+                }
+              },
+              child: const Text('Enregistrer'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (saved == true) {
+      final member = FamilyMember(
+        id: existing?.id ?? 0,
+        nom: fields['nom']!.text.trim(),
+        postnom: fields['postnom']!.text.trim(),
+        prenom: fields['prenom']!.text.trim(),
+        lieuNaissance: fields['lieu_naissance']!.text.trim(),
+        dateNaissance: fields['date_naissance']!.text.trim(),
+        parente: fields['parente']!.text.trim(),
+      );
+      try {
+        if (existing == null) {
+          await _api.createFamilyMember(member, image: selectedImage);
+        } else {
+          await _api.updateFamilyMember(member, image: selectedImage);
+        }
+        await _loadMembers();
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Membre enregistré.')));
+        }
+      } catch (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                error is ApiException
+                    ? error.message
+                    : 'Impossible de joindre l’API.',
+              ),
+            ),
+          );
+        }
+      }
+    }
+    for (final controller in fields.values) {
+      controller.dispose();
+    }
+  }
+
+  Future<void> _delete(FamilyMember member) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Supprimer ce membre ?'),
+        content: Text(member.fullName),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    try {
+      await _api.deleteFamilyMember(member.id);
+      if (mounted) await _loadMembers();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              error is ApiException
+                  ? error.message
+                  : 'Impossible de joindre l’API.',
+            ),
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) => PageBody(
     children: [
-      Text(
-        'Les personnes qui comptent',
-        style: Theme.of(context).textTheme.headlineSmall,
+      Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Les personnes qui comptent',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+          ),
+          IconButton(
+            tooltip: 'Actualiser',
+            onPressed: _reload,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
       ),
       Text(
-        'Remplacez ces profils de démonstration par les membres de votre famille.',
+        'Membres de famille enregistrés dans la base de données.',
         style: Theme.of(context).textTheme.bodyMedium,
       ),
       const SizedBox(height: 14),
-      LayoutBuilder(
-        builder: (context, constraints) {
-          final columns = constraints.maxWidth > 650
-              ? 3
-              : constraints.maxWidth > 420
-              ? 2
-              : 1;
-          return GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: columns,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              // Les profils peuvent contenir plusieurs lignes de texte.
-              // Des cartes plus hautes évitent de couper ces informations.
-              childAspectRatio: columns == 1 ? .9 : .72,
-            ),
-            itemCount: familyMembers.length,
-            itemBuilder: (context, index) {
-              final member = familyMembers[index];
-              return Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      CircleAvatar(
-                        radius: 38,
-                        backgroundColor: const Color(0xffe7f0ed),
-                        child: Text(
-                          member.initials,
-                          style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.ink,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        member.name,
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      Text(
-                        member.relationship,
-                        style: const TextStyle(color: AppTheme.muted),
-                      ),
-                      if (member.activity.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Text(member.activity, textAlign: TextAlign.center),
-                      ],
-                      if (member.description.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          member.description,
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ],
-                  ),
+      if (_isLoading)
+        const Center(
+          child: Padding(
+            padding: EdgeInsets.all(32),
+            child: CircularProgressIndicator(),
+          ),
+        )
+      else if (_loadError != null)
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                const Icon(
+                  Icons.cloud_off_outlined,
+                  size: 36,
+                  color: AppTheme.muted,
                 ),
+                const SizedBox(height: 8),
+                Text(_loadError!, textAlign: TextAlign.center),
+                TextButton.icon(
+                  onPressed: _reload,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Réessayer'),
+                ),
+              ],
+            ),
+          ),
+        )
+      else ...[
+        Align(
+          alignment: Alignment.centerRight,
+          child: FilledButton.icon(
+            onPressed: () => _edit(),
+            icon: const Icon(Icons.person_add_alt_1),
+            label: const Text('Ajouter un membre'),
+          ),
+        ),
+        const SizedBox(height: 10),
+        if (_familyMembers.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(28),
+            child: Text(
+              'Aucun membre enregistré.',
+              textAlign: TextAlign.center,
+            ),
+          )
+        else
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final columns = constraints.maxWidth > 650
+                  ? 3
+                  : constraints.maxWidth > 420
+                  ? 2
+                  : 1;
+              return GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: columns,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: columns == 1 ? 1.15 : .85,
+                ),
+                itemCount: _familyMembers.length,
+                itemBuilder: (context, index) {
+                  final member = _familyMembers[index];
+                  return Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _memberAvatar(member),
+                          const SizedBox(height: 8),
+                          Text(
+                            member.fullName,
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          Text(
+                            member.parente,
+                            style: const TextStyle(color: AppTheme.muted),
+                          ),
+                          Text(
+                            'Né(e) le ${member.dateNaissance} à ${member.lieuNaissance}',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              IconButton(
+                                tooltip: 'Modifier',
+                                onPressed: () => _edit(member),
+                                icon: const Icon(Icons.edit_outlined),
+                              ),
+                              IconButton(
+                                tooltip: 'Supprimer',
+                                onPressed: () => _delete(member),
+                                icon: const Icon(Icons.delete_outline),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
               );
             },
-          );
-        },
-      ),
+          ),
+      ],
     ],
   );
 }
@@ -517,7 +1254,20 @@ class PageBody extends StatelessWidget {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 760),
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+          padding: EdgeInsets.fromLTRB(
+            MediaQuery.sizeOf(context).width < 360
+                ? 16
+                : MediaQuery.sizeOf(context).width >= 900
+                ? 32
+                : 20,
+            MediaQuery.sizeOf(context).width >= 600 ? 24 : 16,
+            MediaQuery.sizeOf(context).width < 360
+                ? 16
+                : MediaQuery.sizeOf(context).width >= 900
+                ? 32
+                : 20,
+            28,
+          ),
           children: children,
         ),
       ),
